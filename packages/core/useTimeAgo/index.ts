@@ -6,6 +6,7 @@ import { useNow } from '../useNow'
 
 export type UseTimeAgoFormatter<T = number> = (value: T, isPast: boolean) => string
 
+// TODO: Consider using this type instead: Intl.RelativeTimeFormatUnit
 export type UseTimeAgoUnitNamesDefault = 'second' | 'minute' | 'hour' | 'day' | 'week' | 'month' | 'year'
 
 export interface UseTimeAgoMessagesBuiltIn {
@@ -32,10 +33,9 @@ export interface FormatTimeAgoOptions<UnitNames extends string = UseTimeAgoUnitN
    */
   fullDateFormatter?: (date: Date) => string
 
-  /**
-   * Messages for formatting the string
-   */
-  messages?: UseTimeAgoMessages<UnitNames>
+  locale?: string
+
+  relativeTimeOptions?: Intl.RelativeTimeFormatOptions
 
   /**
    * Minimum display time unit (default is minute)
@@ -56,7 +56,6 @@ export interface FormatTimeAgoOptions<UnitNames extends string = UseTimeAgoUnitN
    */
   units?: UseTimeAgoUnit<UseTimeAgoUnitNamesDefault>[]
 }
-
 export interface UseTimeAgoOptions<Controls extends boolean, UnitNames extends string = UseTimeAgoUnitNamesDefault> extends FormatTimeAgoOptions<UnitNames> {
   /**
    * Expose more controls
@@ -88,36 +87,6 @@ const DEFAULT_UNITS: UseTimeAgoUnit<UseTimeAgoUnitNamesDefault>[] = [
   { max: 28512000000, value: 2592000000, name: 'month' },
   { max: Infinity, value: 31536000000, name: 'year' },
 ]
-
-const DEFAULT_MESSAGES: UseTimeAgoMessages<UseTimeAgoUnitNamesDefault> = {
-  justNow: 'just now',
-  past: n => n.match(/\d/) ? `${n} ago` : n,
-  future: n => n.match(/\d/) ? `in ${n}` : n,
-  month: (n, past) => n === 1
-    ? past
-      ? 'last month'
-      : 'next month'
-    : `${n} month${n > 1 ? 's' : ''}`,
-  year: (n, past) => n === 1
-    ? past
-      ? 'last year'
-      : 'next year'
-    : `${n} year${n > 1 ? 's' : ''}`,
-  day: (n, past) => n === 1
-    ? past
-      ? 'yesterday'
-      : 'tomorrow'
-    : `${n} day${n > 1 ? 's' : ''}`,
-  week: (n, past) => n === 1
-    ? past
-      ? 'last week'
-      : 'next week'
-    : `${n} week${n > 1 ? 's' : ''}`,
-  hour: n => `${n} hour${n > 1 ? 's' : ''}`,
-  minute: n => `${n} minute${n > 1 ? 's' : ''}`,
-  second: n => `${n} second${n > 1 ? 's' : ''}`,
-  invalid: '',
-}
 
 function DEFAULT_FORMATTER(date: Date) {
   return date.toISOString().slice(0, 10)
@@ -156,12 +125,15 @@ export function useTimeAgo<UnitNames extends string = UseTimeAgoUnitNamesDefault
 export function formatTimeAgo<UnitNames extends string = UseTimeAgoUnitNamesDefault>(from: Date, options: FormatTimeAgoOptions<UnitNames> = {}, now: Date | number = Date.now()): string {
   const {
     max,
-    messages = DEFAULT_MESSAGES as UseTimeAgoMessages<UnitNames>,
     fullDateFormatter = DEFAULT_FORMATTER,
     units = DEFAULT_UNITS,
     showSecond = false,
     rounding = 'round',
+    locale = 'ar',
+    relativeTimeOptions = { numeric: 'auto' },
   } = options
+
+  const rtf = new Intl.RelativeTimeFormat(locale, relativeTimeOptions)
 
   const roundFn = typeof rounding === 'number'
     ? (n: number) => +n.toFixed(rounding)
@@ -177,21 +149,12 @@ export function formatTimeAgo<UnitNames extends string = UseTimeAgoUnitNamesDefa
   function format(diff: number, unit: UseTimeAgoUnit) {
     const val = getValue(diff, unit)
     const past = diff > 0
-
-    const str = applyFormat(unit.name as UnitNames, val, past)
-    return applyFormat(past ? 'past' : 'future', str, past)
-  }
-
-  function applyFormat(name: UnitNames | keyof UseTimeAgoMessagesBuiltIn, val: number | string, isPast: boolean) {
-    const formatter = messages[name]
-    if (typeof formatter === 'function')
-      return formatter(val as never, isPast)
-    return formatter.replace('{0}', val.toString())
+    return rtf.format(past ? -val : val, unit.name)
   }
 
   // less than a minute
   if (absDiff < 60000 && !showSecond)
-    return messages.justNow
+    return rtf.format(0, 'second')
 
   if (typeof max === 'number' && absDiff > max)
     return fullDateFormatter(new Date(from))
@@ -210,5 +173,5 @@ export function formatTimeAgo<UnitNames extends string = UseTimeAgoUnitNamesDefa
       return format(diff, unit)
   }
 
-  return messages.invalid
+  return ''// TODO: make this dynamic
 }
